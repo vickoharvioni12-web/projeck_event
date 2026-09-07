@@ -20,10 +20,18 @@ const createTransaction = async (req, res) => {
 
   const qty = Number(quantity);
 
+  const connection = await db.getConnection();
+
   try {
-    const [tickets] = await db.query('SELECT * FROM ticket WHERE ticket_id = ?', [ticket_id]);
-    
+    await connection.beginTransaction();
+
+    const [tickets] = await connection.query(
+      'SELECT * FROM ticket WHERE ticket_id = ? FOR UPDATE',
+      [ticket_id]
+    );
+
     if (tickets.length === 0) {
+      await connection.rollback();
       return res.status(404).json({ success: false, message: 'Tiket tidak ditemukan!' });
     }
 
@@ -32,20 +40,23 @@ const createTransaction = async (req, res) => {
     const stok = Number(ticket.stok);
 
     if (stok < qty) {
+      await connection.rollback();
       return res.status(400).json({ success: false, message: 'Kuota tiket tidak mencukupi!' });
     }
 
     const total_harga = price * qty;
     const metode = metode_pembayaran || 'transfer';
 
-    const [result] = await db.query(
+    const [result] = await connection.query(
       `INSERT INTO transaction_order 
        (user_id, ticket_id, jumlah_ticket, total_harga, metode_pembayaran, status_pembayaran) 
        VALUES (?, ?, ?, ?, ?, ?)`,
       [user_id, ticket_id, qty, total_harga, metode, 'pending']
     );
 
-    await db.query('UPDATE ticket SET stok = stok - ? WHERE ticket_id = ?', [qty, ticket_id]);
+    await connection.query('UPDATE ticket SET stok = stok - ? WHERE ticket_id = ?', [qty, ticket_id]);
+
+    await connection.commit();
 
     return res.status(201).json({
       success: true,
@@ -62,13 +73,16 @@ const createTransaction = async (req, res) => {
     });
 
   } catch (error) {
+    await connection.rollback();
     return res.status(500).json({ success: false, message: error.message });
+  } finally {
+    connection.release();
   }
 };
 
 const getMyTransactions = async (req, res) => {
   const user_id = req.user?.user_id || req.user?.id || req.user?.id_user;
-  
+
   try {
     const [orders] = await db.query(
       `SELECT transaction_id, user_id, ticket_id, jumlah_ticket, total_harga, metode_pembayaran, status_pembayaran, created_at
@@ -115,22 +129,47 @@ const updateTransactionStatus = async (req, res) => {
     });
   }
 
+  const connection = await db.getConnection();
+
   try {
-    const [result] = await db.query(
+    await connection.beginTransaction();
+
+    const [orders] = await connection.query(
+      'SELECT * FROM transaction_order WHERE transaction_id = ? FOR UPDATE',
+      [id]
+    );
+
+    if (orders.length === 0) {
+      await connection.rollback();
+      return res.status(404).json({ success: false, message: 'Transaksi tidak ditemukan!' });
+    }
+
+    const order = orders[0];
+
+    if (status_pembayaran === 'cancelled' && order.status_pembayaran !== 'cancelled') {
+      await connection.query(
+        'UPDATE ticket SET stok = stok + ? WHERE ticket_id = ?',
+        [order.jumlah_ticket, order.ticket_id]
+      );
+    }
+
+    await connection.query(
       `UPDATE transaction_order SET status_pembayaran = ? WHERE transaction_id = ?`,
       [status_pembayaran, id]
     );
 
-    if (result.affectedRows === 0) {
-      return res.status(404).json({ success: false, message: 'Transaksi tidak ditemukan!' });
-    }
+    await connection.commit();
 
     return res.json({
       success: true,
       message: `Status transaksi ID ${id} berhasil diubah menjadi '${status_pembayaran}'`
     });
+
   } catch (error) {
+    await connection.rollback();
     return res.status(500).json({ success: false, message: error.message });
+  } finally {
+    connection.release();
   }
 };
 

@@ -1,20 +1,11 @@
 const express = require('express');
 const router = express.Router();
-
 const transactionController = require('../controllers/transactionController');
-const authMiddleware = require('../middleware/authMiddleware');
+const { verifyToken } = require('../middleware/authMiddleware'); // sesuaikan nama middleware JWT kamu
 
-const verifyToken = authMiddleware.verifyToken || authMiddleware;
-const verifyRole = authMiddleware.verifyRole; 
-
-const createTransaction = transactionController.createTransaction;
-const getMyTransactions = transactionController.getMyTransactions;
-const getAllTransactions = transactionController.getAllTransactions; 
-const updateTransactionStatus = transactionController.updateTransactionStatus; 
-router.post('/buy', verifyToken, createTransaction);
-router.get('/my-orders', verifyToken, getMyTransactions);
-
-router.get('/admin/all', verifyToken, verifyRole(['admin']), getAllTransactions);
-router.patch('/admin/:id/status', verifyToken, verifyRole(['admin']), updateTransactionStatus);
+router.post('/', verifyToken, transactionController.createTransaction);
+router.get('/my-transactions', verifyToken, transactionController.getMyTransactions);
+router.get('/', verifyToken, transactionController.getAllTransactions);
+router.put('/:id/status', verifyToken, transactionController.updateTransactionStatus);
 
 module.exports = router;

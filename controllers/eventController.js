@@ -42,6 +42,94 @@ const getAllEvents = async (req, res) => {
   }
 };
 
+const createEvent = async (req, res) => {
+  try {
+    const { nama_event, deskripsi, tanggal_pembelian_mulai, tanggal_pembelian_selesai } = req.body;
+    const poster = req.file ? req.file.filename : null;
+
+    const query = `
+      INSERT INTO event (nama_event, deskripsi, tanggal_pembelian_mulai, tanggal_pembelian_selesai, poster) 
+      VALUES (?, ?, ?, ?, ?)
+    `;
+    
+    const [result] = await db.query(query, [
+      nama_event, 
+      deskripsi, 
+      tanggal_pembelian_mulai, 
+      tanggal_pembelian_selesai, 
+      poster
+    ]);
+
+    return res.status(201).json({
+      success: true,
+      message: 'Event berhasil dibuat',
+      data: {
+        event_id: result.insertId,
+        nama_event,
+        poster_url: poster ? `${req.protocol}://${req.get('host')}/uploads/${poster}` : null
+      }
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+const updateEvent = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { nama_event, deskripsi, tanggal_pembelian_mulai, tanggal_pembelian_selesai } = req.body;
+    const poster = req.file ? req.file.filename : null;
+
+    let query = `
+      UPDATE event 
+      SET nama_event = ?, deskripsi = ?, tanggal_pembelian_mulai = ?, tanggal_pembelian_selesai = ?
+    `;
+    const queryParams = [nama_event, deskripsi, tanggal_pembelian_mulai, tanggal_pembelian_selesai];
+
+    if (poster) {
+      query += `, poster = ?`;
+      queryParams.push(poster);
+    }
+
+    query += ` WHERE event_id = ?`;
+    queryParams.push(id);
+
+    const [result] = await db.query(query, queryParams);
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ success: false, message: 'Event tidak ditemukan' });
+    }
+
+    return res.json({
+      success: true,
+      message: 'Event berhasil diperbarui'
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+const deleteEvent = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const [result] = await db.query('DELETE FROM event WHERE event_id = ?', [id]);
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ success: false, message: 'Event tidak ditemukan' });
+    }
+
+    return res.json({
+      success: true,
+      message: 'Event berhasil dihapus'
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 module.exports = {
   getAllEvents,
+  createEvent,
+  updateEvent,
+  deleteEvent
 };
