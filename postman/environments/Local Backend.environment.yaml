@@ -1,0 +1,6 @@
+name: Local Backend
+values:
+  - key: base_url
+    value: ''
+  - key: jwt_token
+    value: ''

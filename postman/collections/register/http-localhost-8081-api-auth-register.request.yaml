@@ -1,0 +1,19 @@
+$kind: http-request
+name: http://localhost:8081/api/auth/register
+description: ""
+url: http://localhost:8081/api/auth/register
+method: POST
+body:
+  type: json
+  content: "{\r
+
+    \  \"user_name\": \"Vicko Baru\",\r
+
+    \  \"email\": \"vickobaru@gmail.com\",\r
+
+    \  \"password\": \"password123\",\r
+
+    \  \"role\": \"admin\"\r
+
+    }"
+order: 1789360907350

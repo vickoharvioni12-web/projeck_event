@@ -1,116 +1,49 @@
 const db = require('../config/db');
 
 const createTransaction = async (req, res) => {
-  const { ticket_id, quantity, metode_pembayaran } = req.body;
-  const user_id = req.user?.user_id || req.user?.id || req.user?.id_user;
-
-  if (!user_id) {
-    return res.status(401).json({
-      success: false,
-      message: 'User ID tidak ditemukan dalam token! Silakan login ulang.'
-    });
-  }
-
-  if (!ticket_id || !quantity) {
-    return res.status(400).json({
-      success: false,
-      message: 'ticket_id dan quantity wajib diisi!'
-    });
-  }
-
-  const qty = Number(quantity);
-
-  const connection = await db.getConnection();
-
-  try {
-    await connection.beginTransaction();
-
-    const [tickets] = await connection.query(
-      'SELECT * FROM ticket WHERE ticket_id = ? FOR UPDATE',
-      [ticket_id]
-    );
-
-    if (tickets.length === 0) {
-      await connection.rollback();
-      return res.status(404).json({ success: false, message: 'Tiket tidak ditemukan!' });
-    }
-
-    const ticket = tickets[0];
-    const price = Number(ticket.harga);
-    const stok = Number(ticket.stok);
-
-    if (stok < qty) {
-      await connection.rollback();
-      return res.status(400).json({ success: false, message: 'Kuota tiket tidak mencukupi!' });
-    }
-
-    const total_harga = price * qty;
-    const metode = metode_pembayaran || 'transfer';
-
-    const [result] = await connection.query(
-      `INSERT INTO transaction_order 
-       (user_id, ticket_id, jumlah_ticket, total_harga, metode_pembayaran, status_pembayaran) 
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [user_id, ticket_id, qty, total_harga, metode, 'pending']
-    );
-
-    await connection.query('UPDATE ticket SET stok = stok - ? WHERE ticket_id = ?', [qty, ticket_id]);
-
-    await connection.commit();
-
-    return res.status(201).json({
-      success: true,
-      message: 'Transaksi berhasil dibuat!',
-      data: {
-        transaction_id: result.insertId,
-        user_id,
-        ticket_id,
-        jumlah_ticket: qty,
-        total_harga,
-        metode_pembayaran: metode,
-        status_pembayaran: 'pending'
-      }
-    });
-
-  } catch (error) {
-    await connection.rollback();
-    return res.status(500).json({ success: false, message: error.message });
-  } finally {
-    connection.release();
-  }
 };
 
 const getMyTransactions = async (req, res) => {
-  const user_id = req.user?.user_id || req.user?.id || req.user?.id_user;
-
-  try {
-    const [orders] = await db.query(
-      `SELECT transaction_id, user_id, ticket_id, jumlah_ticket, total_harga, metode_pembayaran, status_pembayaran, created_at
-       FROM transaction_order
-       WHERE user_id = ?
-       ORDER BY created_at DESC`,
-      [user_id]
-    );
-
-    return res.json({
-      success: true,
-      data: orders
-    });
-  } catch (error) {
-    return res.status(500).json({ success: false, message: error.message });
-  }
 };
 
 const getAllTransactions = async (req, res) => {
   try {
-    const [orders] = await db.query(
-      `SELECT transaction_id, user_id, ticket_id, jumlah_ticket, total_harga, metode_pembayaran, status_pembayaran, created_at
-       FROM transaction_order
-       ORDER BY created_at DESC`
-    );
+    const { status, search, page = 1, limit = 10 } = req.query;
+
+    let query = `
+      SELECT t.transaction_id, t.user_id, t.ticket_id, t.jumlah_ticket, 
+             t.total_harga, t.metode_pembayaran, t.status_pembayaran, t.created_at,
+             tk.nama_category
+      FROM transaction_order t
+      LEFT JOIN ticket tk ON t.ticket_id = tk.ticket_id
+      WHERE 1=1
+    `;
+    const queryParams = [];
+
+    if (status) {
+      query += ` AND t.status_pembayaran = ?`;
+      queryParams.push(status);
+    }
+
+    if (search) {
+      query += ` AND (t.transaction_id LIKE ? OR t.user_id LIKE ?)`;
+      queryParams.push(`%${search}%`, `%${search}%`);
+    }
+
+    const pageNum = parseInt(page);
+    const limitNum = parseInt(limit);
+    const offset = (pageNum - 1) * limitNum;
+
+    query += ` ORDER BY t.created_at DESC LIMIT ? OFFSET ?`;
+    queryParams.push(limitNum, offset);
+
+    const [orders] = await db.query(query, queryParams);
 
     return res.json({
       success: true,
+      page: pageNum,
+      limit: limitNum,
+      total_data: orders.length,
       data: orders
     });
   } catch (error) {
@@ -119,57 +52,27 @@ const getAllTransactions = async (req, res) => {
 };
 
 const updateTransactionStatus = async (req, res) => {
-  const { id } = req.params;
-  const { status_pembayaran } = req.body;
+};
 
-  if (!status_pembayaran) {
-    return res.status(400).json({
-      success: false,
-      message: 'status_pembayaran wajib diisi! (contoh: paid, cancelled, pending)'
-    });
-  }
-
-  const connection = await db.getConnection();
-
+const getDashboardSummary = async (req, res) => {
   try {
-    await connection.beginTransaction();
+    const query = `
+      SELECT 
+        COUNT(CASE WHEN status_pembayaran = 'paid' THEN 1 END) AS total_transaksi_berhasil,
+        COALESCE(SUM(CASE WHEN status_pembayaran = 'paid' THEN total_harga ELSE 0 END), 0) AS total_pendapatan,
+        COALESCE(SUM(CASE WHEN status_pembayaran = 'paid' THEN jumlah_ticket ELSE 0 END), 0) AS total_tiket_terjual,
+        COUNT(CASE WHEN status_pembayaran = 'pending' THEN 1 END) AS total_pending
+      FROM transaction_order
+    `;
 
-    const [orders] = await connection.query(
-      'SELECT * FROM transaction_order WHERE transaction_id = ? FOR UPDATE',
-      [id]
-    );
-
-    if (orders.length === 0) {
-      await connection.rollback();
-      return res.status(404).json({ success: false, message: 'Transaksi tidak ditemukan!' });
-    }
-
-    const order = orders[0];
-
-    if (status_pembayaran === 'cancelled' && order.status_pembayaran !== 'cancelled') {
-      await connection.query(
-        'UPDATE ticket SET stok = stok + ? WHERE ticket_id = ?',
-        [order.jumlah_ticket, order.ticket_id]
-      );
-    }
-
-    await connection.query(
-      `UPDATE transaction_order SET status_pembayaran = ? WHERE transaction_id = ?`,
-      [status_pembayaran, id]
-    );
-
-    await connection.commit();
+    const [summary] = await db.query(query);
 
     return res.json({
       success: true,
-      message: `Status transaksi ID ${id} berhasil diubah menjadi '${status_pembayaran}'`
+      data: summary[0]
     });
-
   } catch (error) {
-    await connection.rollback();
     return res.status(500).json({ success: false, message: error.message });
-  } finally {
-    connection.release();
   }
 };
 
@@ -177,5 +80,6 @@ module.exports = {
   createTransaction,
   getMyTransactions,
   getAllTransactions,
-  updateTransactionStatus
+  updateTransactionStatus,
+  getDashboardSummary
 };

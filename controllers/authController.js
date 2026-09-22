@@ -3,7 +3,7 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 
 const register = async (req, res) => {
-  const { user_name, email, password, no_telepon } = req.body;
+  const { user_name, email, password, no_telepon, role } = req.body;
   try {
     const [existing] = await db.query('SELECT * FROM user WHERE email = ?', [email]);
     if (existing.length > 0) {
@@ -13,7 +13,7 @@ const register = async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, 10);
     await db.query(
       'INSERT INTO user (user_name, email, password, no_telepon, role) VALUES (?, ?, ?, ?, ?)',
-      [user_name, email, hashedPassword, no_telepon, 'user']
+      [user_name, email, hashedPassword, no_telepon || null, role || 'user']
     );
 
     return res.status(201).json({ success: true, message: 'Registrasi berhasil!' });

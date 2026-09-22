@@ -5,7 +5,15 @@ const getAllEvents = async (req, res) => {
     const { search, category, page = 1, limit = 10 } = req.query;
 
     let query = `
-      SELECT e.*, t.nama_category, t.harga, t.stok 
+      SELECT 
+        e.event_id,
+        e.nama_event,
+        e.deskripsi,
+        e.tanggal_pembelian_mulai,
+        e.tanggal_pembelian_selesai,
+        e.poster,
+        MIN(t.harga) AS harga_mulai,
+        COALESCE(SUM(t.stok), 0) AS total_stok
       FROM event e
       LEFT JOIN ticket t ON e.event_id = t.event_id
       WHERE 1=1
@@ -21,6 +29,8 @@ const getAllEvents = async (req, res) => {
       query += ` AND t.nama_category = ?`;
       queryParams.push(category);
     }
+
+    query += ` GROUP BY e.event_id, e.nama_event, e.deskripsi, e.tanggal_pembelian_mulai, e.tanggal_pembelian_selesai, e.poster`;
 
     const pageNum = parseInt(page);
     const limitNum = parseInt(limit);
@@ -127,9 +137,40 @@ const deleteEvent = async (req, res) => {
   }
 };
 
+const createTicket = async (req, res) => {
+  const { event_id, nama_category, harga, stok } = req.body;
+
+  try {
+    const [existingEvent] = await db.query('SELECT * FROM event WHERE event_id = ?', [event_id]);
+    if (existingEvent.length === 0) {
+      return res.status(404).json({ success: false, message: 'Event tidak ditemukan!' });
+    }
+
+    const [result] = await db.query(
+      'INSERT INTO ticket (event_id, nama_category, harga, stok) VALUES (?, ?, ?, ?)',
+      [event_id, nama_category, harga, stok]
+    );
+
+    return res.status(201).json({
+      success: true,
+      message: 'Tiket berhasil ditambahkan!',
+      data: {
+        ticket_id: result.insertId,
+        event_id,
+        nama_category,
+        harga,
+        stok
+      }
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 module.exports = {
   getAllEvents,
   createEvent,
   updateEvent,
-  deleteEvent
+  deleteEvent,
+  createTicket
 };
