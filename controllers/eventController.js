@@ -167,10 +167,82 @@ const createTicket = async (req, res) => {
   }
 };
 
+const getAdminTickets = async (req, res) => {
+  try {
+    const query = `
+      SELECT 
+        t.ticket_id,
+        e.nama_event AS event_name,
+        t.nama_category AS category,
+        t.harga AS price,
+        t.stok AS quota,
+        0 AS sold
+      FROM ticket t
+      JOIN event e ON t.event_id = e.event_id
+      ORDER BY t.ticket_id DESC
+    `;
+    
+    const [tickets] = await db.query(query);
+    return res.json({
+      success: true,
+      data: tickets
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+const updateTicket = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { nama_category, harga, stok } = req.body;
+
+    const query = `
+      UPDATE ticket 
+      SET nama_category = ?, harga = ?, stok = ? 
+      WHERE ticket_id = ?
+    `;
+
+    const [result] = await db.query(query, [nama_category, harga, stok, id]);
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ success: false, message: 'Tiket tidak ditemukan' });
+    }
+
+    return res.json({
+      success: true,
+      message: 'Tiket berhasil diperbarui'
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+const deleteTicket = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const [result] = await db.query('DELETE FROM ticket WHERE ticket_id = ?', [id]);
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ success: false, message: 'Tiket tidak ditemukan' });
+    }
+
+    return res.json({
+      success: true,
+      message: 'Tiket berhasil dihapus'
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 module.exports = {
   getAllEvents,
   createEvent,
   updateEvent,
   deleteEvent,
-  createTicket
+  createTicket,
+  getAdminTickets,
+  updateTicket,
+  deleteTicket
 };

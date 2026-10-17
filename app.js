@@ -31,7 +31,6 @@ app.use((err, req, res, next) => {
     message: err.message || 'Terjadi kesalahan pada server'
   });
 });
-// Mengunci port ke 8081 dan menentukan IP host lokal
 const PORT = process.env.PORT && process.env.PORT !== '3000' ? process.env.PORT : 8081;
 const HOST = '192.168.69.133';
 
