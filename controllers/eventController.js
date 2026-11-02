@@ -12,10 +12,9 @@ const getAllEvents = async (req, res) => {
         e.tanggal_pembelian_mulai,
         e.tanggal_pembelian_selesai,
         e.poster,
-        MIN(t.harga) AS harga_mulai,
-        COALESCE(SUM(t.stok), 0) AS total_stok
+        (SELECT MIN(t.harga) FROM ticket t WHERE t.event_id = e.event_id) AS harga_mulai,
+        (SELECT COALESCE(SUM(t.stok), 0) FROM ticket t WHERE t.event_id = e.event_id) AS total_stok
       FROM event e
-      LEFT JOIN ticket t ON e.event_id = t.event_id
       WHERE 1=1
     `;
     const queryParams = [];
@@ -25,12 +24,10 @@ const getAllEvents = async (req, res) => {
       queryParams.push(`%${search}%`);
     }
 
-    if (category) {
-      query += ` AND t.nama_category = ?`;
+    if (category && category !== 'All Events') {
+      query += ` AND EXISTS (SELECT 1 FROM ticket t WHERE t.event_id = e.event_id AND t.nama_category = ?)`;
       queryParams.push(category);
     }
-
-    query += ` GROUP BY e.event_id, e.nama_event, e.deskripsi, e.tanggal_pembelian_mulai, e.tanggal_pembelian_selesai, e.poster`;
 
     const pageNum = parseInt(page);
     const limitNum = parseInt(limit);
@@ -41,11 +38,16 @@ const getAllEvents = async (req, res) => {
 
     const [events] = await db.query(query, queryParams);
 
+    const formattedEvents = events.map(event => ({
+      ...event,
+      poster_url: event.poster ? `${req.protocol}://${req.get('host')}/uploads/${event.poster}` : null
+    }));
+
     return res.json({
       success: true,
       page: pageNum,
       limit: limitNum,
-      data: events
+      data: formattedEvents
     });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
@@ -224,12 +226,12 @@ const deleteTicket = async (req, res) => {
     const [result] = await db.query('DELETE FROM ticket WHERE ticket_id = ?', [id]);
 
     if (result.affectedRows === 0) {
-      return res.status(404).json({ success: false, message: 'Tiket tidak ditemukan' });
+      return res.status(404).json({ success: false, message: 'Event tidak ditemukan' });
     }
 
     return res.json({
       success: true,
-      message: 'Tiket berhasil dihapus'
+      message: 'Event berhasil dihapus'
     });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
